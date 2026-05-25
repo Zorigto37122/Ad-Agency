@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-bg text-white antialiased;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2a2a2a #141414;
+  }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: #141414; }
+  *::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent-green text-black hover:brightness-110;
+  }
+  .btn-secondary {
+    @apply btn bg-dark-hover text-gray-300 border border-dark-border hover:bg-[#2f2f2f] hover:text-white;
+  }
+  .btn-danger {
+    @apply btn bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30;
+  }
+  .input {
+    @apply block w-full rounded-lg border border-dark-border bg-dark-input px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-accent-green focus:outline-none focus:ring-1 focus:ring-accent-green;
+  }
+  .label {
+    @apply block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide;
+  }
+  .card {
+    @apply bg-dark-card rounded-2xl border border-dark-border p-5;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-green {
+    @apply badge bg-accent-green/20 text-accent-green;
+  }
+  .badge-orange {
+    @apply badge bg-accent-orange/20 text-accent-orange;
+  }
+  .badge-gray {
+    @apply badge bg-white/10 text-gray-400;
+  }
+  .badge-red {
+    @apply badge bg-red-500/20 text-red-400;
+  }
+  .page-content {
+    @apply p-6 space-y-6;
+  }
+  .page-title {
+    @apply text-2xl font-black uppercase tracking-wide text-white;
+  }
+  .section-title {
+    @apply text-xs font-bold uppercase tracking-widest text-gray-500;
+  }
+  select.input option {
+    background: #1e1e1e;
+  }
+}

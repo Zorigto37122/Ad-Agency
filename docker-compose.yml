@@ -1,0 +1,37 @@
+services:
+
+  backend:
+    build:
+      context: ./backend
+      network: host          # use host DNS during build
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////data/ad_agency.db
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-please}
+    volumes:
+      - db_data:/data
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      network: host          # use host DNS during build
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  db_data:
+  uploads_data:
