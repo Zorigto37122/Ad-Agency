@@ -13,6 +13,7 @@ from models.order import Order, OrderStatus
 from models.user import User
 from schemas.order import OrderCreate, OrderUpdate, OrderOut
 from utils.pricing import calculate_price, find_best_discount
+from tasks.email_tasks import send_order_notification
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -89,6 +90,7 @@ def create_order(
     db.commit()
     db.refresh(order)
     logger.info(f"Order created: {order.id} for client {client.name}")
+    send_order_notification.delay(order.id, "created")
     return order
 
 
@@ -145,6 +147,7 @@ def update_order(
     db.commit()
     db.refresh(order)
     logger.info(f"Order updated: {order_id}")
+    send_order_notification.delay(order.id, order.status.value)
     return order
 
 

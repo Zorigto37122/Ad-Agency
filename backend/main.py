@@ -2,7 +2,6 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import create_tables, migrate_db
 from routers import auth, clients, orders, dashboard, messages, discount_programs
 from routers import campaigns, audience, ab_tests, placements, payments
 from routers import contracts, tasks, vendors, leads, client_contacts
@@ -45,12 +44,6 @@ app.include_router(tasks.router)
 app.include_router(vendors.router)
 app.include_router(leads.router)
 app.include_router(client_contacts.router)
-
-
-@app.on_event("startup")
-def startup():
-    create_tables()
-    migrate_db()
 
 
 @app.get("/")

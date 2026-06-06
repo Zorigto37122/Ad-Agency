@@ -14,6 +14,7 @@ from schemas.payment import (
     TaxRecordCreate, TaxRecordOut,
     LateFeeCreate, LateFeeOut,
 )
+from tasks.email_tasks import send_payment_confirmation
 
 router = APIRouter(prefix="/api/invoices", tags=["payments"])
 
@@ -88,6 +89,7 @@ def add_payment(invoice_id: int, data: PaymentCreate, db: Session = Depends(get_
     db.add(payment)
     db.commit()
     db.refresh(payment)
+    send_payment_confirmation.delay(payment.id)
     return payment
 
 

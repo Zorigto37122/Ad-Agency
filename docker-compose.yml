@@ -1,18 +1,53 @@
 services:
 
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ad_agency
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ad_agency"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
-      network: host          # use host DNS during build
+      network: host
     restart: unless-stopped
     environment:
-      DATABASE_URL: sqlite:////data/ad_agency.db
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/ad_agency
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-please}
+      REDIS_URL: redis://redis:6379/0
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@adagency.local}
     volumes:
-      - db_data:/data
       - uploads_data:/app/uploads
-    ports:
-      - "8000:8000"
+    # port 8000 is NOT exposed — access via nginx reverse proxy only
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
@@ -21,17 +56,53 @@ services:
       retries: 5
       start_period: 10s
 
+  celery_worker:
+    build:
+      context: ./backend
+      network: host
+    command: celery -A worker.celery_app worker --loglevel=info -Q default,emails,reports -c 4
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/ad_agency
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-please}
+      REDIS_URL: redis://redis:6379/0
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@adagency.local}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
-      network: host          # use host DNS during build
+      network: host
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-80}:80"
+    # port 80 is NOT exposed — access via nginx reverse proxy only
     depends_on:
       backend:
         condition: service_healthy
 
+  nginx:
+    image: nginx:1.26-alpine
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
 volumes:
-  db_data:
+  pg_data:
+  redis_data:
   uploads_data:

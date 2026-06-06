@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date, timezone
 
 sys.path.insert(0, ".")
 
-from database import SessionLocal, create_tables
+from database import SessionLocal
 from models.client import Client
 from models.order import Order, OrderStatus, ServiceType, ScopeType
 from models.user import User
@@ -45,7 +45,6 @@ ORDERS_SPEC = [
 
 
 def seed():
-    create_tables()
     db = SessionLocal()
     try:
         if not db.query(User).first():
