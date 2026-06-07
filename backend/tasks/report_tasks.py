@@ -18,7 +18,6 @@ def _ensure_reports_dir() -> None:
 @celery_app.task(name="tasks.report_tasks.generate_campaign_report", bind=True, max_retries=2)
 def generate_campaign_report(self, campaign_id: int) -> dict:
     from models.campaign import Campaign
-    from models.order import Order
 
     db = SessionLocal()
     try:
@@ -28,7 +27,7 @@ def generate_campaign_report(self, campaign_id: int) -> dict:
         if not campaign:
             return {"status": "error", "reason": "campaign not found"}
 
-        orders = db.query(Order).filter(Order.campaign_id == campaign_id).all()
+        orders = [campaign.order] if campaign.order else []
 
         filename = f"campaign_{campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
         filepath = os.path.join(REPORTS_DIR, filename)
@@ -41,7 +40,7 @@ def generate_campaign_report(self, campaign_id: int) -> dict:
                     o.id,
                     o.title,
                     o.status.value,
-                    o.total_price,
+                    o.final_price,
                     o.created_at.isoformat() if o.created_at else "",
                     o.deadline.isoformat() if o.deadline else "",
                 ])
@@ -59,7 +58,7 @@ def generate_campaign_report(self, campaign_id: int) -> dict:
 def generate_client_report(self, client_id: int) -> dict:
     from models.client import Client
     from models.order import Order
-    from models.payment import Payment
+    from models.payment import Payment, Invoice
 
     db = SessionLocal()
     try:
@@ -71,7 +70,14 @@ def generate_client_report(self, client_id: int) -> dict:
 
         orders = db.query(Order).filter(Order.client_id == client_id).all()
         order_ids = [o.id for o in orders]
-        payments = db.query(Payment).filter(Payment.order_id.in_(order_ids)).all() if order_ids else []
+        payments = (
+            db.query(Payment)
+            .join(Invoice, Payment.invoice_id == Invoice.id)
+            .filter(Invoice.order_id.in_(order_ids))
+            .all()
+            if order_ids
+            else []
+        )
 
         filename = f"client_{client_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
         filepath = os.path.join(REPORTS_DIR, filename)
@@ -84,7 +90,7 @@ def generate_client_report(self, client_id: int) -> dict:
                     "order",
                     o.id,
                     o.title,
-                    o.total_price,
+                    o.final_price,
                     o.status.value,
                     o.created_at.isoformat() if o.created_at else "",
                 ])
@@ -92,7 +98,7 @@ def generate_client_report(self, client_id: int) -> dict:
                 writer.writerow([
                     "payment",
                     p.id,
-                    f"order#{p.order_id}",
+                    f"invoice#{p.invoice_id}",
                     p.amount,
                     p.status.value if hasattr(p.status, "value") else p.status,
                     p.payment_date.isoformat() if p.payment_date else "",
