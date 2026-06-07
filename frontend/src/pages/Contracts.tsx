@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Contract, ContractStatus } from '../types';
 import { crmService } from '../services/crmService';
 import { useFetch } from '../hooks/useFetch';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -67,7 +68,7 @@ export function Contracts({ addToast }: Props) {
             <div><label className="block text-xs text-gray-500 mb-1">ID клиента *</label><input className="input w-full" type="number" value={form.client_id} onChange={e => set('client_id', e.target.value)} required /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Название *</label><input className="input w-full" value={form.title} onChange={e => set('title', e.target.value)} required /></div>
             <div><label className="block text-xs text-gray-500 mb-1">ID заказа</label><input className="input w-full" type="number" value={form.order_id} onChange={e => set('order_id', e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Истекает</label><input className="input w-full" type="date" value={form.expires_at} onChange={e => set('expires_at', e.target.value)} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Истекает</label><DatePickerField value={form.expires_at} onChange={v => set('expires_at', v)} /></div>
             <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Содержание</label><textarea className="input w-full" rows={4} value={form.content} onChange={e => set('content', e.target.value)} /></div>
           </div>
           <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Сохранение...' : 'Создать'}</button>

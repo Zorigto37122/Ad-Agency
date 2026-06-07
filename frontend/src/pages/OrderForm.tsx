@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ordersService } from '../services/ordersService';
 import { clientsService } from '../services/clientsService';
 import { Client, OrderStatus, ServiceType, ScopeType } from '../types';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -178,7 +179,7 @@ export function OrderForm({ addToast }: Props) {
         )}
         <div>
           <label className="label">Срок выполнения</label>
-          <input className="input" type="date" value={form.deadline} onChange={(e) => set('deadline', e.target.value)} />
+          <DatePickerField value={form.deadline} onChange={v => set('deadline', v)} />
         </div>
 
         {/* File attachment */}

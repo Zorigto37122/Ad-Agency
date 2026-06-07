@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Optional, List
 from pydantic import BaseModel
 
-from models.payment import InvoiceStatus, PaymentStatus, PaymentMethod, RefundStatus, PlanStatus, TaxType
+from models.payment import InvoiceStatus, PaymentStatus, PaymentMethod, RefundStatus, PlanStatus
 
 
 class RefundCreate(BaseModel):
@@ -62,40 +62,20 @@ class PaymentPlanOut(BaseModel):
     due_date: date
     amount: float
     status: PlanStatus
+    payment_id: Optional[int]
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
-class TaxRecordCreate(BaseModel):
-    tax_type: TaxType
-    tax_rate: float
+class PaymentInitiate(BaseModel):
+    installment_id: Optional[int] = None
+    return_url: Optional[str] = None
 
 
-class TaxRecordOut(BaseModel):
-    id: int
-    invoice_id: int
-    tax_type: TaxType
-    tax_rate: float
-    tax_amount: float
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class LateFeeCreate(BaseModel):
-    amount: float
-    reason: Optional[str] = None
-
-
-class LateFeeOut(BaseModel):
-    id: int
-    invoice_id: int
-    amount: float
-    reason: Optional[str]
-    applied_at: datetime
-
-    model_config = {"from_attributes": True}
+class PaymentInitiateOut(BaseModel):
+    payment_id: int
+    confirmation_token: str
 
 
 class InvoiceCreate(BaseModel):
@@ -125,7 +105,5 @@ class InvoiceOut(BaseModel):
     updated_at: Optional[datetime]
     payments: List[PaymentOut] = []
     payment_plans: List[PaymentPlanOut] = []
-    tax_records: List[TaxRecordOut] = []
-    late_fees: List[LateFeeOut] = []
 
     model_config = {"from_attributes": True}

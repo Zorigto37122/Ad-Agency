@@ -57,7 +57,7 @@ def send_order_notification(self, order_id: int, event: str) -> dict:
         <p>Уважаемый {client.name},</p>
         <p>Статус вашего заказа <strong>«{order.title}»</strong> изменился.</p>
         <p>Текущий статус: <strong>{order.status.value}</strong></p>
-        <p>Сумма: <strong>{order.total_price} ₽</strong></p>
+        <p>Сумма: <strong>{order.final_price} ₽</strong></p>
         <hr>
         <p style="color:#888">Это автоматическое уведомление — не отвечайте на него.</p>
         """

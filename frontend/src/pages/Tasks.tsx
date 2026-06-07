@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Task, TaskStatus, TaskPriority } from '../types';
 import { crmService } from '../services/crmService';
 import { useFetch } from '../hooks/useFetch';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -94,7 +95,7 @@ export function Tasks({ addToast }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Срок</label>
-              <input className="input w-full" type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} />
+              <DatePickerField value={form.due_date} onChange={v => set('due_date', v)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">ID заказа</label>
@@ -113,7 +114,7 @@ export function Tasks({ addToast }: Props) {
         <form onSubmit={submitLog} className="card mt-4 flex gap-2 flex-wrap items-end">
           <p className="text-xs text-gray-500 w-full">Запись времени для задачи #{logTaskId}</p>
           <input className="input" type="number" step="0.5" placeholder="Часы" value={logForm.hours} onChange={e => setLogForm(f => ({ ...f, hours: e.target.value }))} required />
-          <input className="input" type="date" value={logForm.logged_at} onChange={e => setLogForm(f => ({ ...f, logged_at: e.target.value }))} required />
+          <DatePickerField className="w-44" value={logForm.logged_at} onChange={v => setLogForm(f => ({ ...f, logged_at: v }))} required />
           <input className="input" placeholder="Описание" value={logForm.description} onChange={e => setLogForm(f => ({ ...f, description: e.target.value }))} />
           <button className="btn-primary" type="submit">Записать</button>
           <button type="button" className="text-xs text-gray-500" onClick={() => setLogTaskId(null)}>Отмена</button>

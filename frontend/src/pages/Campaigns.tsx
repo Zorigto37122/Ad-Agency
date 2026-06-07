@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Campaign, CampaignStatus } from '../types';
 import { campaignsService } from '../services/campaignsService';
 import { useFetch } from '../hooks/useFetch';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -85,11 +86,11 @@ export function Campaigns({ addToast }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Дата начала</label>
-              <input className="input w-full" type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} />
+              <DatePickerField value={form.start_date} onChange={v => set('start_date', v)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Дата окончания</label>
-              <input className="input w-full" type="date" value={form.end_date} onChange={e => set('end_date', e.target.value)} />
+              <DatePickerField value={form.end_date} onChange={v => set('end_date', v)} />
             </div>
           </div>
           <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Сохранение...' : 'Создать'}</button>

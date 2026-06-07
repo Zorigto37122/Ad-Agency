@@ -41,12 +41,6 @@ class PlanStatus(str, enum.Enum):
     overdue = "overdue"
 
 
-class TaxType(str, enum.Enum):
-    vat = "vat"
-    sales_tax = "sales_tax"
-    withholding = "withholding"
-
-
 class Invoice(Base):
     __tablename__ = "invoices"
 
@@ -63,8 +57,6 @@ class Invoice(Base):
     order = relationship("Order")
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
     payment_plans = relationship("PaymentPlan", back_populates="invoice", cascade="all, delete-orphan")
-    tax_records = relationship("TaxRecord", back_populates="invoice", cascade="all, delete-orphan")
-    late_fees = relationship("LateFee", back_populates="invoice", cascade="all, delete-orphan")
 
 
 class Payment(Base):
@@ -107,31 +99,8 @@ class PaymentPlan(Base):
     due_date = Column(Date, nullable=False)
     amount = Column(Float, nullable=False)
     status = Column(Enum(PlanStatus), nullable=False, default=PlanStatus.pending)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     invoice = relationship("Invoice", back_populates="payment_plans")
-
-
-class TaxRecord(Base):
-    __tablename__ = "tax_records"
-
-    id = Column(Integer, primary_key=True, index=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
-    tax_type = Column(Enum(TaxType), nullable=False)
-    tax_rate = Column(Float, nullable=False)
-    tax_amount = Column(Float, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    invoice = relationship("Invoice", back_populates="tax_records")
-
-
-class LateFee(Base):
-    __tablename__ = "late_fees"
-
-    id = Column(Integer, primary_key=True, index=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
-    amount = Column(Float, nullable=False)
-    reason = Column(String, nullable=True)
-    applied_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    invoice = relationship("Invoice", back_populates="late_fees")
+    payment = relationship("Payment")

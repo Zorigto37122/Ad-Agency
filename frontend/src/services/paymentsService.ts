@@ -1,5 +1,5 @@
 import api from './api';
-import { Invoice, Payment, Refund, PaymentPlan, TaxRecord, LateFee } from '../types';
+import { Invoice, Payment, Refund, PaymentPlan } from '../types';
 
 export const paymentsService = {
   async listInvoices(params?: { order_id?: number; status?: string }): Promise<Invoice[]> {
@@ -46,13 +46,11 @@ export const paymentsService = {
     return data;
   },
 
-  async addTaxRecord(invoiceId: number, payload: { tax_type: string; tax_rate: number }): Promise<TaxRecord> {
-    const { data } = await api.post<TaxRecord>(`/api/invoices/${invoiceId}/tax`, payload);
-    return data;
-  },
-
-  async addLateFee(invoiceId: number, payload: { amount: number; reason?: string }): Promise<LateFee> {
-    const { data } = await api.post<LateFee>(`/api/invoices/${invoiceId}/late-fee`, payload);
+  async initiatePayment(invoiceId: number, installmentId?: number): Promise<{ payment_id: number; confirmation_token: string }> {
+    const { data } = await api.post<{ payment_id: number; confirmation_token: string }>(`/api/invoices/${invoiceId}/pay`, {
+      installment_id: installmentId,
+      return_url: window.location.href,
+    });
     return data;
   },
 };

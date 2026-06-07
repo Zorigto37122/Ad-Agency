@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Invoice, PaymentMethod, TaxType } from '../types';
+import { Invoice, PaymentMethod, PaymentPlan } from '../types';
 import { paymentsService } from '../services/paymentsService';
 import { useFetch } from '../hooks/useFetch';
+import { PaymentWidget } from '../components/PaymentWidget';
+import { DatePickerField } from '../components/DatePickerField';
+
+const PLAN_STATUS_LABELS = { pending: 'Ожидает', paid: 'Оплачено', overdue: 'Просрочено' } as const;
+const PLAN_STATUS_COLORS = {
+  pending: 'text-gray-400',
+  paid: 'text-accent-green',
+  overdue: 'text-red-400',
+} as const;
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -19,9 +28,8 @@ export function InvoiceDetail({ addToast }: Props) {
 
   const [payForm, setPayForm] = useState({ payment_date: '', amount: '', method: 'card' as PaymentMethod, currency: 'RUB' });
   const [planForm, setPlanForm] = useState({ installments: '', first_due_date: '' });
-  const [taxForm, setTaxForm] = useState({ tax_type: 'vat' as TaxType, tax_rate: '' });
-  const [feeForm, setFeeForm] = useState({ amount: '', reason: '' });
   const [refundForm, setRefundForm] = useState<{ paymentId: number | null; amount: string; reason: string }>({ paymentId: null, amount: '', reason: '' });
+  const [payment, setPayment] = useState<{ installment?: PaymentPlan; amount: number; title: string } | null>(null);
 
   const addPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,26 +56,6 @@ export function InvoiceDetail({ addToast }: Props) {
     } catch { addToast('Ошибка', 'error'); }
   };
 
-  const addTax = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await paymentsService.addTaxRecord(invoiceId, { tax_type: taxForm.tax_type, tax_rate: parseFloat(taxForm.tax_rate) });
-      addToast('Налог добавлен', 'success');
-      setTaxForm({ tax_type: 'vat', tax_rate: '' });
-      refetch();
-    } catch { addToast('Ошибка', 'error'); }
-  };
-
-  const addFee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await paymentsService.addLateFee(invoiceId, { amount: parseFloat(feeForm.amount), reason: feeForm.reason || undefined });
-      addToast('Штраф добавлен', 'success');
-      setFeeForm({ amount: '', reason: '' });
-      refetch();
-    } catch { addToast('Ошибка', 'error'); }
-  };
-
   const addRefund = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!refundForm.paymentId) return;
@@ -84,17 +72,39 @@ export function InvoiceDetail({ addToast }: Props) {
 
   return (
     <div className="page-content space-y-6">
-      <div>
-        <h1 className="page-title">Счёт #{invoice.id}</h1>
-        <p className="text-sm text-gray-500">Заказ #{invoice.order_id} · {invoice.amount.toLocaleString()} ₽ · {invoice.status}</p>
-        <p className="text-xs text-gray-600 mt-0.5">Выставлен: {invoice.issue_date} · Срок: {invoice.due_date}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">Счёт #{invoice.id}</h1>
+          <p className="text-sm text-gray-500">Заказ #{invoice.order_id} · {invoice.amount.toLocaleString()} ₽ · {invoice.status}</p>
+          <p className="text-xs text-gray-600 mt-0.5">Выставлен: {invoice.issue_date} · Срок: {invoice.due_date}</p>
+        </div>
+        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+          <button className="btn-primary" onClick={() => setPayment({ amount: invoice.amount, title: `Оплата счёта #${invoice.id}` })}>
+            Оплатить картой
+          </button>
+        )}
       </div>
+
+      {payment && (
+        <PaymentWidget
+          invoiceId={invoiceId}
+          installmentId={payment.installment?.id}
+          amount={payment.amount}
+          title={payment.title}
+          onClose={() => setPayment(null)}
+          onPaid={() => {
+            setPayment(null);
+            addToast('Платёж прошёл успешно', 'success');
+            refetch();
+          }}
+        />
+      )}
 
       {/* Payments */}
       <section className="card space-y-3">
         <h2 className="text-sm font-semibold text-white">Платежи</h2>
         <form onSubmit={addPayment} className="flex gap-2 flex-wrap">
-          <input className="input" type="date" value={payForm.payment_date} onChange={e => setPayForm(f => ({ ...f, payment_date: e.target.value }))} required />
+          <DatePickerField className="w-44" value={payForm.payment_date} onChange={v => setPayForm(f => ({ ...f, payment_date: v }))} placeholder="Дата платежа" required />
           <input className="input" type="number" step="0.01" placeholder="Сумма" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} required />
           <select className="input" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value as PaymentMethod }))}>
             {(Object.keys(METHOD_LABELS) as PaymentMethod[]).map(m => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
@@ -139,55 +149,40 @@ export function InvoiceDetail({ addToast }: Props) {
         <h2 className="text-sm font-semibold text-white">Рассрочка</h2>
         <form onSubmit={createPlan} className="flex gap-2">
           <input className="input" type="number" placeholder="Частей" value={planForm.installments} onChange={e => setPlanForm(f => ({ ...f, installments: e.target.value }))} required />
-          <input className="input" type="date" placeholder="Первый платёж" value={planForm.first_due_date} onChange={e => setPlanForm(f => ({ ...f, first_due_date: e.target.value }))} required />
+          <DatePickerField className="w-44" value={planForm.first_due_date} onChange={v => setPlanForm(f => ({ ...f, first_due_date: v }))} placeholder="Первый платёж" required />
           <button className="btn-primary" type="submit">Создать</button>
         </form>
         {invoice.payment_plans.length > 0 && (
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs text-gray-500"><th>№</th><th>Дата</th><th>Сумма</th><th>Статус</th></tr></thead>
-            <tbody>
-              {invoice.payment_plans.map(p => (
-                <tr key={p.id} className="border-t border-dark-border text-gray-300">
-                  <td className="py-1">{p.installment_number}</td>
-                  <td>{p.due_date}</td>
-                  <td>{p.amount.toLocaleString()} ₽</td>
-                  <td>{p.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <p className="text-xs text-gray-500">
+              График из {invoice.payment_plans.length} частей по {invoice.payment_plans[0].amount.toLocaleString()} ₽. Каждую часть можно оплатить картой по отдельности — счёт станет «Оплачен», когда будут закрыты все части.
+            </p>
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs text-gray-500"><th>№</th><th>Дата</th><th>Сумма</th><th>Статус</th><th /></tr></thead>
+              <tbody>
+                {invoice.payment_plans.map(p => (
+                  <tr key={p.id} className="border-t border-dark-border text-gray-300">
+                    <td className="py-1">{p.installment_number}</td>
+                    <td>{p.due_date}</td>
+                    <td>{p.amount.toLocaleString()} ₽</td>
+                    <td className={PLAN_STATUS_COLORS[p.status]}>{PLAN_STATUS_LABELS[p.status]}</td>
+                    <td className="text-right">
+                      {p.status !== 'paid' && (
+                        <button
+                          className="text-xs text-accent-green hover:underline"
+                          onClick={() => setPayment({ installment: p, amount: p.amount, title: `Оплата части №${p.installment_number} счёта #${invoice.id}` })}
+                        >
+                          Оплатить часть
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         )}
       </section>
-
-      {/* Tax & Fees */}
-      <div className="grid grid-cols-2 gap-4">
-        <section className="card space-y-3">
-          <h2 className="text-sm font-semibold text-white">Налоги</h2>
-          <form onSubmit={addTax} className="flex gap-2 flex-wrap">
-            <select className="input" value={taxForm.tax_type} onChange={e => setTaxForm(f => ({ ...f, tax_type: e.target.value as TaxType }))}>
-              <option value="vat">НДС</option>
-              <option value="sales_tax">Налог с продаж</option>
-              <option value="withholding">Налог у источника</option>
-            </select>
-            <input className="input" type="number" step="0.01" placeholder="Ставка %" value={taxForm.tax_rate} onChange={e => setTaxForm(f => ({ ...f, tax_rate: e.target.value }))} required />
-            <button className="btn-primary text-xs py-1 px-3" type="submit">Добавить</button>
-          </form>
-          {invoice.tax_records.map(t => (
-            <div key={t.id} className="text-xs text-gray-400">{t.tax_type}: {t.tax_rate}% = {t.tax_amount.toLocaleString()} ₽</div>
-          ))}
-        </section>
-        <section className="card space-y-3">
-          <h2 className="text-sm font-semibold text-white">Штрафы</h2>
-          <form onSubmit={addFee} className="flex gap-2 flex-wrap">
-            <input className="input" type="number" step="0.01" placeholder="Сумма" value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} required />
-            <input className="input" placeholder="Причина" value={feeForm.reason} onChange={e => setFeeForm(f => ({ ...f, reason: e.target.value }))} />
-            <button className="btn-primary text-xs py-1 px-3" type="submit">Добавить</button>
-          </form>
-          {invoice.late_fees.map(f => (
-            <div key={f.id} className="text-xs text-gray-400">{f.amount.toLocaleString()} ₽{f.reason ? ` · ${f.reason}` : ''}</div>
-          ))}
-        </section>
-      </div>
     </div>
   );
 }

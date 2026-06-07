@@ -4,6 +4,7 @@ import { CampaignMetric, CampaignReport, CampaignVariant } from '../types';
 import { campaignsService } from '../services/campaignsService';
 import { abTestsService } from '../services/abTestsService';
 import { useFetch } from '../hooks/useFetch';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -98,7 +99,7 @@ export function CampaignDetail({ addToast }: Props) {
         </div>
         {showMetricForm && (
           <form onSubmit={addMetric} className="grid grid-cols-3 gap-2">
-            <input className="input" type="date" placeholder="Дата" value={metricForm.date} onChange={e => setMetricForm(f => ({ ...f, date: e.target.value }))} required />
+            <DatePickerField value={metricForm.date} onChange={v => setMetricForm(f => ({ ...f, date: v }))} placeholder="Дата" required />
             <input className="input" type="number" placeholder="Показы" value={metricForm.impressions} onChange={e => setMetricForm(f => ({ ...f, impressions: e.target.value }))} />
             <input className="input" type="number" placeholder="Клики" value={metricForm.clicks} onChange={e => setMetricForm(f => ({ ...f, clicks: e.target.value }))} />
             <input className="input" type="number" placeholder="Конверсии" value={metricForm.conversions} onChange={e => setMetricForm(f => ({ ...f, conversions: e.target.value }))} />
@@ -138,8 +139,8 @@ export function CampaignDetail({ addToast }: Props) {
               <option value="weekly">Еженедельный</option>
               <option value="monthly">Ежемесячный</option>
             </select>
-            <input className="input" type="date" placeholder="Начало" value={reportForm.period_start} onChange={e => setReportForm(f => ({ ...f, period_start: e.target.value }))} required />
-            <input className="input" type="date" placeholder="Конец" value={reportForm.period_end} onChange={e => setReportForm(f => ({ ...f, period_end: e.target.value }))} required />
+            <DatePickerField className="w-44" value={reportForm.period_start} onChange={v => setReportForm(f => ({ ...f, period_start: v }))} placeholder="Начало" required />
+            <DatePickerField className="w-44" value={reportForm.period_end} onChange={v => setReportForm(f => ({ ...f, period_end: v }))} placeholder="Конец" required />
             <button className="btn-primary" type="submit">Создать</button>
           </form>
         )}

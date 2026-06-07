@@ -17,6 +17,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+
 # Copy only the installed packages — no gcc, no apt cache, no pip
 COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH"

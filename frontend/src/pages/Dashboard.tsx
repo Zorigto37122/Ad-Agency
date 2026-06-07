@@ -28,17 +28,34 @@ const DotsIcon = () => (
   </button>
 );
 
-function MiniLineChart({ color }: { color: string }) {
-  const pts = [18, 14, 16, 10, 15, 9, 12];
+function MiniLineChart({ pts, color }: { pts: number[]; color: string }) {
   const w = 80, h = 28;
+  if (pts.length < 2) return <svg width={w} height={h} />;
   const min = Math.min(...pts), max = Math.max(...pts);
+  const range = max - min || 1;
   const sx = (i: number) => (i / (pts.length - 1)) * w;
-  const sy = (v: number) => h - ((v - min) / (max - min + 1)) * h;
-  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${sx(i)} ${sy(v)}`).join(' ');
+  const sy = (v: number) => h - ((v - min) / range) * (h - 2) - 1;
   return (
     <svg width={w} height={h} className="opacity-80">
       <polyline points={pts.map((v, i) => `${sx(i)},${sy(v)}`).join(' ')} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function BarChart({ data, color }: { data: number[]; color: string }) {
+  const h = 100;
+  const max = Math.max(...data, 1);
+  return (
+    <div className="flex items-end justify-around gap-0.5 w-full" style={{ height: h }}>
+      {data.map((v, i) => (
+        <div
+          key={i}
+          className="flex-1 rounded-t-sm min-w-0 transition-all"
+          style={{ height: `${Math.max(2, (v / max) * h)}px`, background: color, opacity: v === 0 ? 0.15 : 0.8 }}
+          title={String(v)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -130,17 +147,21 @@ export function Dashboard() {
   const doneRatio = Math.round((data.total_orders - data.pending_orders - data.active_orders - data.overdue_orders) / total * 100);
   const activeRatio = Math.round(data.active_orders / total * 100);
 
-  const bubbleData = [
-    { label: 'Веб', top: 52, bot: 81, isGreen: true },
-    { label: 'SMM', top: 96, bot: 25, isGreen: false },
-    { label: 'Граф', top: 48, bot: 51, isGreen: true },
-    { label: 'Видео', top: 80, bot: 49, isGreen: true },
-    { label: 'Copy', top: 34, bot: 67, isGreen: false },
-    { label: 'Баннер', top: 92, bot: 28, isGreen: true },
-    { label: 'PR', top: 84, bot: 20, isGreen: false },
-    { label: 'SEO', top: 58, bot: 39, isGreen: true },
-    { label: 'Email', top: 36, bot: 72, isGreen: false },
-  ];
+  const serviceLabels: Record<string, string> = {
+    web_design: 'Веб',
+    graphic_design: 'Граф',
+    social_media_campaign: 'SMM',
+    video_production: 'Видео',
+    copywriting: 'Copy',
+  };
+  const bubbleData = (data.orders_by_service ?? []).map((s) => ({
+    label: serviceLabels[s.service_type] ?? s.service_type,
+    top: s.count,
+    bot: s.overdue,
+    isGreen: s.overdue === 0,
+  }));
+
+  const trendPts = (data.orders_last_30_days ?? []).slice(-7).map((d) => d.count);
 
   const recentOrders = data.recent_orders.slice(0, 7);
   const timelineColors = ['bg-accent-green', 'bg-accent-orange', 'bg-blue-500', 'bg-accent-green', 'bg-purple-500', 'bg-accent-orange', 'bg-accent-green'];
@@ -203,7 +224,7 @@ export function Dashboard() {
                 </div>
               </div>
               <div className="mt-3">
-                <MiniLineChart color="#FF9300" />
+                <MiniLineChart pts={trendPts} color="#FF9300" />
               </div>
             </div>
 
@@ -287,7 +308,7 @@ export function Dashboard() {
                 return (
                   <TimelineRow
                     key={o.id}
-                    label={new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                    label={new Date(o.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
                     start={startPct}
                     width={widthPct}
                     color={timelineColors[i % timelineColors.length]}
@@ -321,6 +342,33 @@ export function Dashboard() {
           <Link to="/orders" className="mt-3 text-center text-xs text-accent-green/70 hover:text-accent-green transition-colors">
             Все заказы →
           </Link>
+        </div>
+      </div>
+
+      {/* Activity charts */}
+      <div className="grid grid-cols-2 gap-5">
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="section-title">Активность заказов</span>
+            <span className="text-xs text-gray-600">За 30 дней</span>
+          </div>
+          <BarChart data={(data.orders_last_30_days ?? []).map((d) => d.count)} color="#7DC832" />
+          <div className="flex justify-between text-[10px] text-gray-700 pt-1">
+            <span>{(data.orders_last_30_days ?? [])[0]?.date.slice(5) ?? ''}</span>
+            <span>{(data.orders_last_30_days ?? []).slice(-1)[0]?.date.slice(5) ?? ''}</span>
+          </div>
+        </div>
+
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="section-title">Выручка</span>
+            <span className="text-xs text-gray-600">За 30 дней</span>
+          </div>
+          <BarChart data={(data.orders_last_30_days ?? []).map((d) => d.revenue)} color="#FF9300" />
+          <div className="flex justify-between text-[10px] text-gray-700 pt-1">
+            <span>{(data.orders_last_30_days ?? [])[0]?.date.slice(5) ?? ''}</span>
+            <span>{(data.orders_last_30_days ?? []).slice(-1)[0]?.date.slice(5) ?? ''}</span>
+          </div>
         </div>
       </div>
 

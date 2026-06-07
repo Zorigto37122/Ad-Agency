@@ -1,28 +1,49 @@
-from datetime import date, timedelta
+import logging
+from datetime import date, datetime, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
+
+from core.config import settings
 from core.dependencies import get_db, get_current_user, require_admin
-from models.payment import Invoice, Payment, Refund, PaymentPlan, TaxRecord, LateFee, InvoiceStatus
+from integrations import yookassa
+from models.payment import (
+    Invoice, Payment, Refund, PaymentPlan, InvoiceStatus, PaymentStatus, PaymentMethod, PlanStatus,
+)
 from models.user import User
 from schemas.payment import (
     InvoiceCreate, InvoiceUpdate, InvoiceOut,
     PaymentCreate, PaymentUpdate, PaymentOut,
     RefundCreate, RefundOut,
     PaymentPlanCreate, PaymentPlanOut,
-    TaxRecordCreate, TaxRecordOut,
-    LateFeeCreate, LateFeeOut,
+    PaymentInitiate, PaymentInitiateOut,
 )
 from tasks.email_tasks import send_payment_confirmation
 
 router = APIRouter(prefix="/api/invoices", tags=["payments"])
+webhook_router = APIRouter(prefix="/api/payments", tags=["payments"])
+
+
+def _refresh_overdue_plans(inv: Invoice, db: Session) -> None:
+    """Flip instalments whose due date has passed and are still unpaid to 'overdue'."""
+    today = date.today()
+    changed = False
+    for plan in inv.payment_plans:
+        if plan.status == PlanStatus.pending and plan.due_date < today:
+            plan.status = PlanStatus.overdue
+            changed = True
+    if changed:
+        db.commit()
 
 
 def _get_invoice_or_404(invoice_id: int, db: Session) -> Invoice:
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refresh_overdue_plans(inv, db)
     return inv
 
 
@@ -141,22 +162,109 @@ def create_payment_plan(invoice_id: int, data: PaymentPlanCreate, db: Session = 
     return plans
 
 
-@router.post("/{invoice_id}/tax", response_model=TaxRecordOut, status_code=status.HTTP_201_CREATED)
-def add_tax_record(invoice_id: int, data: TaxRecordCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+@router.post("/{invoice_id}/pay", response_model=PaymentInitiateOut, status_code=status.HTTP_201_CREATED)
+def initiate_payment(
+    invoice_id: int,
+    data: PaymentInitiate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Start an online card payment via YooKassa for the whole invoice or a single
+    instalment, and return a confirmation_token for the embedded checkout widget."""
     inv = _get_invoice_or_404(invoice_id, db)
-    tax_amount = round(inv.amount * data.tax_rate / 100, 2)
-    record = TaxRecord(invoice_id=invoice_id, tax_type=data.tax_type, tax_rate=data.tax_rate, tax_amount=tax_amount)
-    db.add(record)
+
+    description = f"Оплата счёта №{inv.id}"
+    amount = inv.amount
+    plan: Optional[PaymentPlan] = None
+    if data.installment_id is not None:
+        plan = db.query(PaymentPlan).filter(
+            PaymentPlan.id == data.installment_id, PaymentPlan.invoice_id == invoice_id,
+        ).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Installment not found")
+        if plan.status == PlanStatus.paid:
+            raise HTTPException(status_code=400, detail="Installment already paid")
+        amount = plan.amount
+        description = f"Оплата счёта №{inv.id} (часть {plan.installment_number})"
+
+    if not settings.yookassa_shop_id or not settings.yookassa_secret_key:
+        raise HTTPException(status_code=503, detail="Online payment is not configured")
+
+    return_url = data.return_url or settings.yookassa_return_url
+    try:
+        yk_payment = yookassa.create_payment(
+            amount=amount,
+            description=description,
+            return_url=return_url,
+            metadata={"invoice_id": invoice_id, "installment_id": plan.id if plan else None},
+        )
+    except httpx.HTTPError as exc:
+        logger.error("YooKassa payment creation failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Payment gateway error — please try again later")
+
+    payment = Payment(
+        invoice_id=invoice_id,
+        payment_date=datetime.now(timezone.utc),
+        amount=amount,
+        method=PaymentMethod.card,
+        currency="RUB",
+        status=PaymentStatus.pending,
+        transaction_ref=yk_payment["id"],
+    )
+    db.add(payment)
+    db.flush()
+    if plan:
+        plan.payment_id = payment.id
     db.commit()
-    db.refresh(record)
-    return record
+
+    return PaymentInitiateOut(
+        payment_id=payment.id,
+        confirmation_token=yk_payment["confirmation"]["confirmation_token"],
+    )
 
 
-@router.post("/{invoice_id}/late-fee", response_model=LateFeeOut, status_code=status.HTTP_201_CREATED)
-def add_late_fee(invoice_id: int, data: LateFeeCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    _get_invoice_or_404(invoice_id, db)
-    fee = LateFee(invoice_id=invoice_id, **data.model_dump())
-    db.add(fee)
-    db.commit()
-    db.refresh(fee)
-    return fee
+@webhook_router.post("/yookassa/webhook", status_code=status.HTTP_200_OK)
+async def yookassa_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receives payment status notifications from YooKassa.
+
+    The notification body is never trusted directly — we re-fetch the payment
+    from YooKassa's API by id, which is the provider's recommended way to guard
+    against forged webhook calls."""
+    body = await request.json()
+    yk_object = body.get("object") or {}
+    yk_payment_id = yk_object.get("id")
+    if not yk_payment_id:
+        return {"status": "ignored"}
+
+    payment = db.query(Payment).filter(Payment.transaction_ref == yk_payment_id).first()
+    if not payment:
+        return {"status": "ignored"}
+
+    try:
+        yk_payment = yookassa.fetch_payment(yk_payment_id)
+    except httpx.HTTPError as exc:
+        logger.error("YooKassa payment lookup failed for %s: %s", yk_payment_id, exc)
+        raise HTTPException(status_code=502, detail="Could not verify payment status")
+    yk_status = yk_payment.get("status")
+
+    if yk_status == "succeeded" and payment.status != PaymentStatus.completed:
+        payment.status = PaymentStatus.completed
+        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
+        if plan:
+            plan.status = PlanStatus.paid
+
+        inv = db.query(Invoice).filter(Invoice.id == payment.invoice_id).first()
+        paid_total = sum(p.amount for p in inv.payments if p.status == PaymentStatus.completed)
+        if paid_total >= inv.amount:
+            inv.status = InvoiceStatus.paid
+
+        db.commit()
+        send_payment_confirmation.delay(payment.id)
+    elif yk_status == "canceled" and payment.status != PaymentStatus.failed:
+        payment.status = PaymentStatus.failed
+        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
+        if plan:
+            plan.payment_id = None
+        db.commit()
+
+    return {"status": "ok"}

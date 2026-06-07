@@ -90,6 +90,8 @@ export interface DashboardStats {
   pending_orders: number;
   overdue_orders: number;
   total_clients: number;
+  orders_by_service: { service_type: string; count: number; revenue: number; overdue: number }[];
+  orders_last_30_days: { date: string; count: number; revenue: number }[];
   recent_orders: {
     id: number;
     title: string;
@@ -98,6 +100,19 @@ export interface DashboardStats {
     final_price: number;
     created_at: string;
   }[];
+}
+
+export interface MonitoringData {
+  summary: {
+    total_orders: number;
+    active_orders: number;
+    pending_orders: number;
+    overdue_orders: number;
+    total_revenue: number;
+    new_orders_in_period: number;
+  };
+  orders_by_day: { date: string; count: number; revenue: number }[];
+  orders_by_service: { service_type: string; count: number; revenue: number; overdue: number }[];
 }
 
 export interface OrderCreate {
@@ -245,24 +260,6 @@ export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
 export type PaymentMethod = 'card' | 'bank_transfer' | 'cash' | 'crypto';
 export type RefundStatus = 'requested' | 'approved' | 'rejected' | 'processed';
 export type PlanStatus = 'pending' | 'paid' | 'overdue';
-export type TaxType = 'vat' | 'sales_tax' | 'withholding';
-
-export interface TaxRecord {
-  id: number;
-  invoice_id: number;
-  tax_type: TaxType;
-  tax_rate: number;
-  tax_amount: number;
-  created_at: string;
-}
-
-export interface LateFee {
-  id: number;
-  invoice_id: number;
-  amount: number;
-  reason: string | null;
-  applied_at: string;
-}
 
 export interface PaymentPlan {
   id: number;
@@ -271,6 +268,7 @@ export interface PaymentPlan {
   due_date: string;
   amount: number;
   status: PlanStatus;
+  payment_id: number | null;
   created_at: string;
 }
 
@@ -309,8 +307,6 @@ export interface Invoice {
   updated_at: string | null;
   payments: Payment[];
   payment_plans: PaymentPlan[];
-  tax_records: TaxRecord[];
-  late_fees: LateFee[];
 }
 
 // ── CRM / Operations ────────────────────────────────────────────────────────

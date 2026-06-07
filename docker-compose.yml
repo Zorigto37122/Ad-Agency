@@ -40,6 +40,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@adagency.local}
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
+      YOOKASSA_RETURN_URL: ${YOOKASSA_RETURN_URL:-http://localhost:5173/invoices}
     volumes:
       - uploads_data:/app/uploads
     # port 8000 is NOT exposed — access via nginx reverse proxy only
@@ -60,7 +63,8 @@ services:
     build:
       context: ./backend
       network: host
-    command: celery -A worker.celery_app worker --loglevel=info -Q default,emails,reports -c 4
+    entrypoint: ["celery"]
+    command: ["-A", "worker.celery_app", "worker", "--loglevel=info", "-Q", "default,emails,reports", "-c", "2"]
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/ad_agency
@@ -71,6 +75,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@adagency.local}
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
+      YOOKASSA_RETURN_URL: ${YOOKASSA_RETURN_URL:-http://localhost:5173/invoices}
     volumes:
       - uploads_data:/app/uploads
     depends_on:

@@ -6,6 +6,7 @@ sys.path.insert(0, ".")
 
 from database import SessionLocal
 from models.client import Client
+from models.discount_program import DiscountProgram  # registers mapper before Order uses it
 from models.order import Order, OrderStatus, ServiceType, ScopeType
 from models.user import User
 from core.security import get_password_hash
@@ -112,7 +113,7 @@ def _seed_extended(db):
     from models.campaign import Campaign, MediaChannel, CampaignMetric, CampaignReport, CampaignStatus, ChannelType, ReportPeriod, campaign_media_channels
     from models.audience import AudienceSegment, campaign_audience_segments, Gender, IncomeLevel
     from models.ab_test import CampaignVariant
-    from models.payment import Invoice, Payment, InvoiceStatus, PaymentStatus, PaymentMethod, PlanStatus, TaxType, TaxRecord, PaymentPlan
+    from models.payment import Invoice, Payment, InvoiceStatus, PaymentStatus, PaymentMethod, PlanStatus, PaymentPlan
     from models.crm import Task, TimeLog, Lead, Contract, Vendor, ClientContact, TaskStatus, TaskPriority, LeadStatus, LeadSource, ContractStatus
     from sqlalchemy import text
 
@@ -291,10 +292,6 @@ def _seed_extended(db):
     for p in [p1, p2, p3, p4]:
         db.add(p)
     db.flush()
-
-    # Tax record for invoice 0
-    tax = TaxRecord(invoice_id=invoices[0].id, tax_type=TaxType.vat, tax_rate=20.0, tax_amount=round(invoices[0].amount * 0.2, 2))
-    db.add(tax)
 
     # Payment plan for invoice 3
     plan1 = PaymentPlan(invoice_id=invoices[3].id, installment_number=1, due_date=today + timedelta(days=10), amount=round(invoices[3].amount / 2, 2), status=PlanStatus.pending)

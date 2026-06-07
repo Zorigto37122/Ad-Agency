@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0001"
 down_revision: Union[str, None] = None
@@ -24,7 +25,6 @@ ENUM_TYPES = {
     "paymentmethod":  ("card", "bank_transfer", "cash", "crypto"),
     "refundstatus":   ("requested", "approved", "rejected", "processed"),
     "planstatus":     ("pending", "paid", "overdue"),
-    "taxtype":        ("vat", "sales_tax", "withholding"),
     "campaignstatus": ("draft", "active", "paused", "completed", "cancelled"),
     "channeltype":    ("social_media", "search", "display", "video", "email", "outdoor"),
     "reportperiod":   ("daily", "weekly", "monthly"),
@@ -41,15 +41,21 @@ ENUM_TYPES = {
 }
 
 
-def _enum(name: str) -> sa.Enum:
-    return sa.Enum(*ENUM_TYPES[name], name=name, create_type=False)
+def _enum(name: str) -> postgresql.ENUM:
+    return postgresql.ENUM(*ENUM_TYPES[name], name=name, create_type=False)
 
 
 def upgrade() -> None:
     conn = op.get_bind()
     for name, values in ENUM_TYPES.items():
         vals = ", ".join(f"'{v}'" for v in values)
-        conn.execute(sa.text(f"CREATE TYPE IF NOT EXISTS {name} AS ENUM ({vals})"))
+        conn.execute(sa.text(f"""
+DO $$ BEGIN
+    CREATE TYPE {name} AS ENUM ({vals});
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+        """))
 
     op.create_table(
         "users",
@@ -313,30 +319,10 @@ def upgrade() -> None:
         sa.Column("due_date", sa.Date(), nullable=False),
         sa.Column("amount", sa.Float(), nullable=False),
         sa.Column("status", _enum("planstatus"), nullable=False, server_default="pending"),
+        sa.Column("payment_id", sa.Integer(), sa.ForeignKey("payments.id"), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
     )
     op.create_index("ix_payment_plans_id", "payment_plans", ["id"])
-
-    op.create_table(
-        "tax_records",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("invoice_id", sa.Integer(), sa.ForeignKey("invoices.id"), nullable=False),
-        sa.Column("tax_type", _enum("taxtype"), nullable=False),
-        sa.Column("tax_rate", sa.Float(), nullable=False),
-        sa.Column("tax_amount", sa.Float(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-    )
-    op.create_index("ix_tax_records_id", "tax_records", ["id"])
-
-    op.create_table(
-        "late_fees",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("invoice_id", sa.Integer(), sa.ForeignKey("invoices.id"), nullable=False),
-        sa.Column("amount", sa.Float(), nullable=False),
-        sa.Column("reason", sa.String(), nullable=True),
-        sa.Column("applied_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-    )
-    op.create_index("ix_late_fees_id", "late_fees", ["id"])
 
     op.create_table(
         "contracts",
@@ -413,7 +399,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     tables = [
         "leads", "client_contacts", "time_logs", "tasks", "contracts",
-        "late_fees", "tax_records", "payment_plans", "refunds", "payments",
+        "payment_plans", "refunds", "payments",
         "invoices", "content_calendar", "ad_placements", "campaign_variants",
         "campaign_reports", "campaign_metrics", "campaign_audience_segments",
         "campaign_media_channels", "campaigns", "messages", "orders",

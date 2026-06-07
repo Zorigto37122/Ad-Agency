@@ -1,39 +1,55 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useFetch } from '../hooks/useFetch';
+import { MonitoringData } from '../types';
+import api from '../services/api';
 
-function PlaceholderChart({ height = 120, label }: { height?: number; label: string }) {
+type Period = 'day' | 'week' | 'month' | 'year';
+
+const PERIOD_LABELS: Record<Period, string> = {
+  day: 'День',
+  week: 'Неделя',
+  month: 'Месяц',
+  year: 'Год',
+};
+
+function BarChart({ data, color }: { data: number[]; color: string }) {
+  const h = 120;
+  const max = Math.max(...data, 1);
   return (
-    <div
-      className="w-full rounded-xl bg-dark-hover border border-dark-border flex items-end justify-around px-4 pb-4 pt-6 gap-2"
-      style={{ height }}
-    >
-      {Array.from({ length: 8 }).map((_, i) => (
+    <div className="flex items-end justify-around gap-0.5 w-full" style={{ height: h }}>
+      {data.map((v, i) => (
         <div
           key={i}
-          className="flex-1 rounded-t-md opacity-40"
-          style={{
-            height: `${30 + Math.sin(i * 1.2) * 25 + Math.random() * 20}%`,
-            background: i % 2 === 0 ? '#7DC832' : '#FF9300',
-          }}
+          className="flex-1 rounded-t-sm min-w-0 transition-all"
+          style={{ height: `${Math.max(2, (v / max) * h)}px`, background: color, opacity: v === 0 ? 0.15 : 0.85 }}
+          title={String(v)}
         />
       ))}
     </div>
   );
 }
 
-function StatPlaceholder({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
     <div className="card flex flex-col gap-2">
       <span className="section-title">{label}</span>
       <p className="text-3xl font-black" style={{ color }}>{value}</p>
       <p className="text-xs text-gray-600">{sub}</p>
-      <div className="h-1 rounded-full bg-dark-border mt-1">
-        <div className="h-1 rounded-full w-2/3" style={{ background: color }} />
-      </div>
     </div>
   );
 }
 
 export function Monitoring() {
+  const [period, setPeriod] = useState<Period>('month');
+
+  const { data, loading, error } = useFetch<MonitoringData>(
+    () => api.get(`/api/monitoring?period=${period}`).then((r) => r.data),
+    [period]
+  );
+
+  const firstDate = data?.orders_by_day[0]?.date.slice(5) ?? '';
+  const lastDate = data?.orders_by_day.slice(-1)[0]?.date.slice(5) ?? '';
+
   return (
     <div className="page-content">
       {/* Title */}
@@ -41,16 +57,17 @@ export function Monitoring() {
         <h1 className="page-title">Мониторинг</h1>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-600">Период:</span>
-          {['День', 'Неделя', 'Месяц', 'Год'].map((p, i) => (
+          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
             <button
               key={p}
+              onClick={() => setPeriod(p)}
               className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                i === 2
+                p === period
                   ? 'bg-accent-green text-black'
                   : 'bg-dark-card border border-dark-border text-gray-500 hover:text-gray-300'
               }`}
             >
-              {p}
+              {PERIOD_LABELS[p]}
             </button>
           ))}
         </div>
@@ -61,72 +78,177 @@ export function Monitoring() {
         <div className="w-2 h-2 rounded-full bg-accent-green animate-pulse flex-shrink-0" />
         <div>
           <p className="text-sm font-semibold text-white">Все системы работают в штатном режиме</p>
-          <p className="text-xs text-gray-600 mt-0.5">Последнее обновление: только что</p>
+          <p className="text-xs text-gray-600 mt-0.5">
+            {loading ? 'Загрузка…' : error ? 'Ошибка загрузки данных' : 'Данные актуальны'}
+          </p>
         </div>
-        <span className="ml-auto badge badge-green">Онлайн</span>
+        <span className={`ml-auto badge ${error ? 'badge-orange' : 'badge-green'}`}>
+          {error ? 'Ошибка' : 'Онлайн'}
+        </span>
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatPlaceholder label="Нагрузка" value="24%" sub="Среднее за день" color="#7DC832" />
-        <StatPlaceholder label="Запросов/мин" value="1 240" sub="+12% к прошлой неделе" color="#7DC832" />
-        <StatPlaceholder label="Ошибки" value="0.3%" sub="За последний час" color="#FF9300" />
-        <StatPlaceholder label="Время отклика" value="142мс" sub="Медиана p50" color="#7DC832" />
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card h-28 animate-pulse bg-dark-hover" />
+          ))}
+        </div>
+      ) : data ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          <StatCard
+            label="Новых заказов"
+            value={String(data.summary.new_orders_in_period)}
+            sub={`За ${PERIOD_LABELS[period].toLowerCase()}`}
+            color="#7DC832"
+          />
+          <StatCard
+            label="Выручка"
+            value={`${data.summary.total_revenue.toLocaleString('ru-RU')} ₽`}
+            sub="Выполненные заказы"
+            color="#7DC832"
+          />
+          <StatCard
+            label="Просрочено"
+            value={String(data.summary.overdue_orders)}
+            sub="Всего просроченных"
+            color={data.summary.overdue_orders > 0 ? '#FF9300' : '#7DC832'}
+          />
+          <StatCard
+            label="Активных"
+            value={String(data.summary.active_orders)}
+            sub="В работе сейчас"
+            color="#7DC832"
+          />
+        </div>
+      ) : null}
 
       {/* Charts */}
-      <div className="grid grid-cols-2 gap-5">
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="section-title">Активность заказов</span>
-            <span className="text-xs text-gray-600">За 30 дней</span>
+      {data && (
+        <div className="grid grid-cols-2 gap-5">
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="section-title">Активность заказов</span>
+              <span className="text-xs text-gray-600">{firstDate} — {lastDate}</span>
+            </div>
+            <BarChart data={data.orders_by_day.map((d) => d.count)} color="#7DC832" />
+            <div className="flex justify-between text-[10px] text-gray-700">
+              <span>{firstDate}</span>
+              <span>{lastDate}</span>
+            </div>
           </div>
-          <PlaceholderChart height={160} label="Активность" />
-          <p className="text-xs text-gray-700 text-center">← Данные будут подключены в следующей версии →</p>
-        </div>
 
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="section-title">Выручка</span>
-            <span className="text-xs text-gray-600">За 30 дней</span>
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="section-title">Выручка</span>
+              <span className="text-xs text-gray-600">{firstDate} — {lastDate}</span>
+            </div>
+            <BarChart data={data.orders_by_day.map((d) => d.revenue)} color="#FF9300" />
+            <div className="flex justify-between text-[10px] text-gray-700">
+              <span>{firstDate}</span>
+              <span>{lastDate}</span>
+            </div>
           </div>
-          <PlaceholderChart height={160} label="Выручка" />
-          <p className="text-xs text-gray-700 text-center">← Данные будут подключены в следующей версии →</p>
         </div>
-      </div>
+      )}
+
+      {/* Orders by service */}
+      {data && data.orders_by_service.length > 0 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <span className="section-title">Заказы по типу услуг</span>
+            <span className="text-xs text-gray-600">Всего заказов</span>
+          </div>
+          <div className="space-y-3">
+            {data.orders_by_service.map((s) => {
+              const serviceLabels: Record<string, string> = {
+                web_design: 'Веб-дизайн',
+                graphic_design: 'Графический дизайн',
+                social_media_campaign: 'SMM-кампания',
+                video_production: 'Видеопроизводство',
+                copywriting: 'Копирайтинг',
+              };
+              const maxCount = Math.max(...data.orders_by_service.map((x) => x.count), 1);
+              return (
+                <div key={s.service_type} className="flex items-center gap-3 py-1.5 border-b border-dark-border last:border-0">
+                  <span className="text-sm text-white w-44 flex-shrink-0">
+                    {serviceLabels[s.service_type] ?? s.service_type}
+                  </span>
+                  <div className="flex-1 h-2 rounded-full bg-dark-border overflow-hidden">
+                    <div
+                      className="h-2 rounded-full bg-accent-green"
+                      style={{ width: `${(s.count / maxCount) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold text-white w-6 text-right">{s.count}</span>
+                  <span className="text-xs text-gray-600 w-24 text-right">
+                    {s.revenue.toLocaleString('ru-RU')} ₽
+                  </span>
+                  {s.overdue > 0 && (
+                    <span className="badge badge-orange text-xs">{s.overdue} просроч.</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Service health */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <span className="section-title">Состояние сервисов</span>
-          <span className="text-xs text-gray-600">Обновляется в реальном времени</span>
+          <span className="text-xs text-gray-600">
+            {loading ? 'Проверка…' : 'Обновлено только что'}
+          </span>
         </div>
         <div className="space-y-3">
           {[
-            { name: 'API сервер', status: 'online', latency: '12мс', uptime: '99.9%' },
-            { name: 'База данных', status: 'online', latency: '3мс', uptime: '100%' },
-            { name: 'Хранилище файлов', status: 'online', latency: '45мс', uptime: '99.7%' },
-            { name: 'Email-рассылка', status: 'degraded', latency: '320мс', uptime: '97.2%' },
-            { name: 'Аналитика', status: 'maintenance', latency: '—', uptime: '—' },
+            {
+              name: 'API сервер',
+              status: error ? 'degraded' : 'online',
+              note: error ? 'Ошибка ответа' : 'Отвечает',
+            },
+            {
+              name: 'База данных',
+              status: error ? 'degraded' : 'online',
+              note: error ? 'Недоступна' : 'Подключена',
+            },
+            { name: 'Celery Worker', status: 'unknown', note: 'Нет данных' },
+            { name: 'Email-рассылка', status: 'unknown', note: 'Не настроена' },
           ].map((s) => (
-            <div key={s.name} className="flex items-center justify-between py-2 border-b border-dark-border last:border-0">
+            <div
+              key={s.name}
+              className="flex items-center justify-between py-2 border-b border-dark-border last:border-0"
+            >
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  s.status === 'online' ? 'bg-accent-green' :
-                  s.status === 'degraded' ? 'bg-accent-orange' :
-                  'bg-gray-600'
-                }`} />
+                <div
+                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    s.status === 'online'
+                      ? 'bg-accent-green'
+                      : s.status === 'degraded'
+                      ? 'bg-accent-orange'
+                      : 'bg-gray-600'
+                  }`}
+                />
                 <span className="text-sm text-white">{s.name}</span>
               </div>
               <div className="flex items-center gap-6 text-xs">
-                <span className="text-gray-600">Задержка: <span className="text-white">{s.latency}</span></span>
-                <span className="text-gray-600">Доступность: <span className="text-white">{s.uptime}</span></span>
-                <span className={`badge ${
-                  s.status === 'online' ? 'badge-green' :
-                  s.status === 'degraded' ? 'badge-orange' :
-                  'badge-gray'
-                }`}>
-                  {s.status === 'online' ? 'Работает' : s.status === 'degraded' ? 'Снижение' : 'Обслуживание'}
+                <span className="text-gray-600">{s.note}</span>
+                <span
+                  className={`badge ${
+                    s.status === 'online'
+                      ? 'badge-green'
+                      : s.status === 'degraded'
+                      ? 'badge-orange'
+                      : 'badge-gray'
+                  }`}
+                >
+                  {s.status === 'online'
+                    ? 'Работает'
+                    : s.status === 'degraded'
+                    ? 'Снижение'
+                    : 'Неизвестно'}
                 </span>
               </div>
             </div>

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "noreply@adagency.local"
 
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
+    yookassa_return_url: str = "http://localhost:5173/invoices"
+
     class Config:
         env_file = ".env"
 

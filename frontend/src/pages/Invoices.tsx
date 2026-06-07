@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Invoice, InvoiceStatus } from '../types';
 import { paymentsService } from '../services/paymentsService';
 import { useFetch } from '../hooks/useFetch';
+import { PaymentWidget } from '../components/PaymentWidget';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -26,6 +28,7 @@ export function Invoices({ addToast }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<Invoice | null>(null);
 
   const set = (k: keyof typeof emptyForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -85,11 +88,11 @@ export function Invoices({ addToast }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Дата выставления *</label>
-              <input className="input w-full" type="date" value={form.issue_date} onChange={e => set('issue_date', e.target.value)} required />
+              <DatePickerField value={form.issue_date} onChange={v => set('issue_date', v)} required />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Срок оплаты *</label>
-              <input className="input w-full" type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} required />
+              <DatePickerField value={form.due_date} onChange={v => set('due_date', v)} required />
             </div>
             <div className="col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Заметки</label>
@@ -110,13 +113,37 @@ export function Invoices({ addToast }: Props) {
                 <p className="text-white font-medium">Счёт #{inv.id} · Заказ #{inv.order_id}</p>
                 <p className="text-xs text-gray-500 mt-0.5">Срок: {inv.due_date}</p>
               </div>
-              <div className="text-right">
-                <p className="text-white font-bold">{inv.amount.toLocaleString()} ₽</p>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[inv.status]}`}>{STATUS_LABELS[inv.status]}</span>
+              <div className="text-right flex items-center gap-3">
+                <div>
+                  <p className="text-white font-bold">{inv.amount.toLocaleString()} ₽</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[inv.status]}`}>{STATUS_LABELS[inv.status]}</span>
+                </div>
+                {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                  <button
+                    className="btn-primary text-xs py-1.5 px-3"
+                    onClick={(e) => { e.preventDefault(); setPayInvoice(inv); }}
+                  >
+                    Оплатить
+                  </button>
+                )}
               </div>
             </Link>
           ))}
         </div>
+      )}
+
+      {payInvoice && (
+        <PaymentWidget
+          invoiceId={payInvoice.id}
+          amount={payInvoice.amount}
+          title={`Оплата счёта #${payInvoice.id}`}
+          onClose={() => setPayInvoice(null)}
+          onPaid={() => {
+            setPayInvoice(null);
+            addToast('Платёж прошёл успешно', 'success');
+            refetch();
+          }}
+        />
       )}
     </div>
   );

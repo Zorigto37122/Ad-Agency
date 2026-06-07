@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ContentCalendarEntry, ContentType, ContentStatus } from '../types';
 import { placementsService } from '../services/placementsService';
 import { useFetch } from '../hooks/useFetch';
+import { DatePickerField } from '../components/DatePickerField';
 
 interface Props {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -87,7 +88,7 @@ export function ContentCalendar({ addToast }: Props) {
                 {(Object.keys(CONTENT_TYPE_LABELS) as ContentType[]).map(t => <option key={t} value={t}>{CONTENT_TYPE_LABELS[t]}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs text-gray-500 mb-1">Дата *</label><input className="input w-full" type="date" value={form.scheduled_date} onChange={e => set('scheduled_date', e.target.value)} required /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Дата *</label><DatePickerField value={form.scheduled_date} onChange={v => set('scheduled_date', v)} required /></div>
             <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Заметки</label><input className="input w-full" value={form.notes} onChange={e => set('notes', e.target.value)} /></div>
           </div>
           <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Сохранение...' : 'Добавить'}</button>
