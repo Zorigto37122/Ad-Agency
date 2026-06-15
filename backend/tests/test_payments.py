@@ -39,7 +39,10 @@ def test_add_payment_triggers_confirmation_task(client, db, admin_headers, make_
     send_payment_confirmation.delay.assert_called_once_with(resp.json()["id"])
 
 
-def test_initiate_payment_returns_503_when_yookassa_not_configured(client, db, auth_headers, make_order):
+def test_initiate_payment_returns_503_when_yookassa_not_configured(client, db, auth_headers, make_order, monkeypatch):
+    from core.config import settings
+    monkeypatch.setattr(settings, "yookassa_shop_id", "")
+    monkeypatch.setattr(settings, "yookassa_secret_key", "")
     invoice = _make_invoice(db, make_order())
     resp = client.post(f"/api/invoices/{invoice.id}/pay", json={}, headers=auth_headers)
     assert resp.status_code == 503

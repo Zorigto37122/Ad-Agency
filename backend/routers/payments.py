@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import List, Optional
 import httpx
@@ -52,6 +53,36 @@ def _get_payment_or_404(invoice_id: int, payment_id: int, db: Session) -> Paymen
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")
     return p
+
+
+def _apply_yk_status(payment: Payment, yk_payment: dict, db: Session) -> None:
+    """Apply an authoritative YooKassa payment object to local records.
+
+    Shared by the webhook and the client-triggered sync endpoint — both re-fetch
+    the payment from YooKassa's API rather than trusting a notification body or
+    a client-side widget event, so this is the single place that flips local
+    statuses based on a verified YooKassa status."""
+    yk_status = yk_payment.get("status")
+
+    if yk_status == "succeeded" and payment.status != PaymentStatus.completed:
+        payment.status = PaymentStatus.completed
+        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
+        if plan:
+            plan.status = PlanStatus.paid
+
+        inv = db.query(Invoice).filter(Invoice.id == payment.invoice_id).first()
+        paid_total = sum(p.amount for p in inv.payments if p.status == PaymentStatus.completed)
+        if paid_total >= inv.amount:
+            inv.status = InvoiceStatus.paid
+
+        db.commit()
+        send_payment_confirmation.delay(payment.id)
+    elif yk_status == "canceled" and payment.status != PaymentStatus.failed:
+        payment.status = PaymentStatus.failed
+        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
+        if plan:
+            plan.payment_id = None
+        db.commit()
 
 
 @router.get("", response_model=List[InvoiceOut])
@@ -223,6 +254,50 @@ def initiate_payment(
     )
 
 
+@router.post("/{invoice_id}/payments/{payment_id}/sync", response_model=InvoiceOut)
+def sync_payment(
+    invoice_id: int,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-check a payment's status directly with YooKassa right after the
+    checkout widget reports success.
+
+    The official flow is to wait for YooKassa's webhook, but that requires a
+    publicly reachable URL — unavailable when running locally/behind no public
+    domain. This lets the client ask us to verify immediately, using the same
+    trusted re-fetch (`fetch_payment`) the webhook relies on, so we never act
+    on the widget's local event directly."""
+    inv = _get_invoice_or_404(invoice_id, db)
+    payment = _get_payment_or_404(invoice_id, payment_id, db)
+
+    if payment.status in (PaymentStatus.completed, PaymentStatus.failed):
+        return inv
+
+    # The widget fires "success" as soon as the user finishes the 3-D Secure
+    # step, but YooKassa can take a moment to flip the payment to its terminal
+    # state on their side — so a single immediate lookup can still come back
+    # "pending"/"waiting_for_capture". Poll briefly for a terminal status
+    # rather than giving up after one try.
+    yk_payment: dict = {}
+    for attempt in range(5):
+        try:
+            yk_payment = yookassa.fetch_payment(payment.transaction_ref)
+        except httpx.HTTPError as exc:
+            logger.error("YooKassa payment lookup failed for %s: %s", payment.transaction_ref, exc)
+            raise HTTPException(status_code=502, detail="Could not verify payment status")
+
+        if yk_payment.get("status") in ("succeeded", "canceled"):
+            break
+        if attempt < 4:
+            time.sleep(1)
+
+    _apply_yk_status(payment, yk_payment, db)
+    db.refresh(inv)
+    return inv
+
+
 @webhook_router.post("/yookassa/webhook", status_code=status.HTTP_200_OK)
 async def yookassa_webhook(request: Request, db: Session = Depends(get_db)):
     """Receives payment status notifications from YooKassa.
@@ -245,26 +320,6 @@ async def yookassa_webhook(request: Request, db: Session = Depends(get_db)):
     except httpx.HTTPError as exc:
         logger.error("YooKassa payment lookup failed for %s: %s", yk_payment_id, exc)
         raise HTTPException(status_code=502, detail="Could not verify payment status")
-    yk_status = yk_payment.get("status")
 
-    if yk_status == "succeeded" and payment.status != PaymentStatus.completed:
-        payment.status = PaymentStatus.completed
-        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
-        if plan:
-            plan.status = PlanStatus.paid
-
-        inv = db.query(Invoice).filter(Invoice.id == payment.invoice_id).first()
-        paid_total = sum(p.amount for p in inv.payments if p.status == PaymentStatus.completed)
-        if paid_total >= inv.amount:
-            inv.status = InvoiceStatus.paid
-
-        db.commit()
-        send_payment_confirmation.delay(payment.id)
-    elif yk_status == "canceled" and payment.status != PaymentStatus.failed:
-        payment.status = PaymentStatus.failed
-        plan = db.query(PaymentPlan).filter(PaymentPlan.payment_id == payment.id).first()
-        if plan:
-            plan.payment_id = None
-        db.commit()
-
+    _apply_yk_status(payment, yk_payment, db)
     return {"status": "ok"}
